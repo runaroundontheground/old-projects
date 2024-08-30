@@ -1,0 +1,1137 @@
+<HTML>
+
+<head>
+    <title> 2d platformer </title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.1/jquery.min.js"></script>
+</head>
+
+<body>
+    <a href="index.html">back to home</a>
+    <br />
+    <label for="xTele">input an x position</label>
+    <input type="text" id="xTele" onclick="makeTextWork()">
+    <br />
+    <label for="yTele">input a y position </label>
+    <input type="text" id="yTele" onclick="makeTextWork()">
+    <br />
+    <button type="button" onclick="Teleport()" id="Teleporter">Teleport!</button>
+    <br />
+    <label for="levelSet">set ur level</label>
+    <input type="text" id=levelSet onclick="makeTextWork()">
+    <br />
+    <button type="button" onclick="levelSet()" id="levelSetter">set the level!</button>
+    <br />
+    <!-- start of javascript and things-->
+    <canvas id=canvas width=600 height=300> </canvas>
+    <p>controls: a/d for horizontal movement, w to jump, s to become squish, x to teleport, c to toggle object place,
+        LMB to place, press i to toggle frame advance, right arrow to advance
+        frames</p>
+    <p id="m"></p>
+    <img id="player" src="ball.png" style="display: none;">
+    <img id="platform" src="platform.png" style="display: none;">
+
+    <script>
+        let makeTextWrk = false;
+        let levelUpdate = 1;
+        let debugTeleX = 0;
+        let debugTeleY = 0;
+        function makeTextWork() { makeTextWrk = true; }
+        function Teleport() {
+
+            let TX = Number(document.getElementById("xTele").value);
+            let TY = Number(document.getElementById("yTele").value);
+            debugTeleX = TX;
+            debugTeleY = TY;
+            makeTextWrk = false;
+
+        }
+        function levelSet() {
+
+            levelUpdate = Number(document.getElementById("levelSet").value);
+            randLvl(levelUpdate);
+            makeTextWrk = false;
+
+        }
+
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        $(canvas).css("margin-left", (window.innerWidth - canvas.width) / 2);
+        $(canvas).css("border", "1px solid black");
+        $("#m").css("margin-left", (window.innerWidth - canvas.width) / 2);
+
+        let grav = 0.1; // smaller number will give a more floaty gravity, floaty grav in a parkour/platformer game should be quite fun actually
+        let c = { x: 100, y: 100, smooth: 15, offsetX: 1, offsetY: 1, shake: 0, shakeStr: 5 };
+        c.delay = { shake: 0 };
+        let fps = 60; // change fps for slo-mo?
+        let lvl = 1;
+        let m = { x: 0, y: 0, xc: 0, yc: 0 };
+        let mx = 0; // mouse x
+        let my = 0; // mouse y
+        let mxc = 0;
+        let myc = 0;
+        let pToM = 0;
+        let objMenu = { open: false, selected: "w", w: 4, h: 4, color: "black" };
+
+        let player = new clone({ x: 0, y: 1, w: 12, h: 12, type: "player" }); // make a player
+        player.jp = grav * -30; // make sure to set w and h to 12
+        player.onGround = false;
+        player.touching = { mainType: "", type: "", x: 0, y: 0, w: 0, h: 0 }; // this is the data for what the player is touching, at the start it's nothing, but once the player touching something it'll get the data from that object and put it here
+        player.contacts = { top: false, right: false, bottom: false, left: false };
+        player.tickDone = false; // fixes a weird bug that causes the player to run tick() for every object instead of just once, so it'll get set to true at the end of the player's things
+        player.tele = { preview: false, x: NaN, y: NaN }  // teleport values for player
+        player.heights = { norm: player.h, squish: player.h / 2, squished: false }; // gets player height to use for being squish and not squish
+        player.toggles = { gravity: true, collide: true, godMode: false, frameAdv: false, xAxis: true, yAxis: true };
+        player.abil = { dbJ: true, dbJU: false, dbJs: 1, dbJL: 1, wlS: true }; // dbJ = double jump, dbJU = double jump used, wlS = does player have wallslide
+        player.posSave = { x: 0, y: 0 }; // save player position in case they fall off the map
+        player.delay = { jump: 0, shoot: 0 }; // delays for whatever the player can do (like jumping, dbjumping, shooting)
+        player.afterImage = { x: [], y: [], opacity: [], count: 0 };
+
+
+        let solids = []; // this array holds all the data for solid objects
+        let projectiles = []; // holds projectiles
+        let input = {};
+        input.keys = {
+            current: NaN, a: false, b: false, c: false, d: false, e: false, f: false, g: false, h: false, i: false, j: false, k: false, l: false, m: false, n: false, o: false, p: false, q: false, r: false, s: false, t: false,
+            u: false, v: false, w: false, x: false, y: false, z: false, shift: false, space: false,
+            0: false, 1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false
+        };
+        input.mouse = {
+            LB: false, RB: false, MB: false
+        }
+
+        let placement = { x: NaN, y: NaN };
+        ctx.font = String(canvas.width / 50) + "px Arial"; // sets the font and size, size is relative to the canvas width
+
+        let debug = ""; // yay debug
+        let debug2 = "";
+
+        // set up lvl: lvl setup, lvl set up
+
+        cloneObj({ x: -40, y: 150, type: "platform" });
+        cloneObj({ x: 50, y: 180, type: "platform" });
+        cloneObj({ x: -600, y: 207, w: 1000, type: "platform" });
+        cloneObj({ x: -303, y: -450, w: 5, h: 600, type: "platform" });
+        cloneObj({ x: -350, y: -450, w: 5, h: 600, type: "platform" });
+
+
+
+
+        // moving platform test
+        cloneObj({ x: -130, moveX2: -80, y: 117, moveY2: 100, move: true, type: "platform", moveVel: 1, moveWait: 5 });
+        cloneObj({ x: 138, y: 97, moveX2: 219, moveY2: 117, move: true, type: "platform" });
+        // end of moving platform test
+
+        function randLvl(L) {
+            lvl = L || lvl;
+            let l = Math.round(200 / lvl);
+            let i = 0;
+            player.abil.dbJs = lvl;
+            solids = [];
+            projectiles = [];
+            player.x = 425;
+            player.y = 180;
+            player.xv = 0;
+            player.yv = 0;
+            player.toggles.xAxis = false;
+            player.toggles.yAxis = false;
+            setTimeout(startPlayer, 1000);
+            cloneObj({ x: 400, y: 200, type: "platform", w: 300 });
+            cloneObj({ x: 400, y: 150, rT: "text", text: "level " + lvl + ": start!" });
+            if (lvl == 1) cloneObj({ x: 400, y: 130, rT: "text", text: "you can do an extra jump in the air, number is based off of the level. you can walljump as well" });
+            cloneObj({ x: 400, y: 170, rT: "text", text: "press 9 to reset if it's impossible" });
+            cloneObj({ x: 10694, y: 226, type: "platform" });
+            cloneObj({ x: 10694, y: -12, type: "platform" });
+            cloneObj({ x: 10694, y: 119, type: "platform" });
+            cloneObj({ x: 10694, y: 318, type: "platform" });
+            cloneObj({ x: 10694, y: 450, type: "platform" });
+            cloneObj({ x: 10694, y: 591, type: "platform" });
+            cloneObj({ x: 10900, y: -20, w: 5, h: 300, type: "platform" });
+            cloneObj({ x: 10900, y: 300, w: 5, h: 300, type: "platform" });
+            cloneObj({ x: 10900, y: 300, w: 500, type: "platform" });
+            ctx.globalAlpha = 0.3;
+            cloneObj({ x: 11214, y: 126, rT: "rect", color: "purple", w: 200, h: 200, lvlTrig: true, coll: false });
+            ctx.globalAlpha = 1;
+            cloneObj({ x: 11000, y: 167, rT: "text", color: "red", text: "end of level " + lvl, coll: false });
+
+            for (i; i < l; i++) {
+
+                let j = 5000;
+                let xPosition = (Math.round(Math.random() * j) * 2) + 500;
+                let yPosition = Math.round(Math.random() * j) / 10;
+                let isMoving = (Math.random() < 0.1) ? true : false;
+                cloneObj({ x: xPosition, y: yPosition, w: Math.round(Math.random() * 100), h: Math.round(Math.random() * 100), type: "platform", move: isMoving, moveVel: Math.random(), random: true });
+
+            } // randomly place objects, because why not?
+        } // random place func
+
+        randLvl();
+
+        addEventListener("keydown", keyHeld); // adds the listener for the event (such as the mouse moving), then chooses the function to use
+        addEventListener("keydown", keysDown);
+        addEventListener("keyup", keyUp);
+        addEventListener("keyup", keysUp);
+        addEventListener("mousemove", moveMouse);
+        addEventListener("mousedown", mouseDown);
+        addEventListener("mouseup", mouseUp);
+        addEventListener("wheel", scroll);
+
+        Teleporter.addEventListener("click", doTheThing);
+        function doTheThing() {
+            player.x = (debugTeleX !== 0) ? debugTeleX : player.x;
+            player.y = (debugTeleY !== 0) ? debugTeleY : player.y;
+        }
+        function moveMouse(e) { // gets the mouse position, but modifies it to get it's position within the camera. frame
+
+            let rect = canvas.getBoundingClientRect();
+            mx = e.clientX - rect.left;
+            my = e.clientY - rect.top;
+            c.offsetX = ((e.clientX - rect.left) - canvas.width / 2) / 40; // event.clientX - rect.left: gets the position of the cursor on the canvas.
+            c.offsetY = ((e.clientY - rect.top) - canvas.height / 2) / 40; // subtracting (c.width / 2) / 40: c.width / 2 centers the mouse position to the middle of the canvas, and / 40 makes the camera. not go out super far
+            pToM = Math.atan2(myc - player.y, mxc - player.x) //* 180 / Math.PI;
+
+        } // this'll get the mouse position and display the x/y position for debugging purposes
+
+
+
+        function tick() { // main game loop is here, should probably mark it out better
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            player.tickDone = false;
+            player.tick();
+            let l = solids.length;
+            let i = 0;
+            for (i; i < l; i++) solids[i].tick();
+            l = projectiles.length;
+            i = 0;
+            for (i; i < l; i++) if (projectiles[i] !== undefined) projectiles[i].tick();
+            showDebug();
+            showTime();
+            if (objMenu.open) runObjMenu();
+
+        } // tick.  bracket
+
+
+
+
+
+
+
+
+        function runObjMenu() { // object menu
+
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = objMenu.color;
+            ctx.fillRect(mx, my, objMenu.w, objMenu.h);
+            ctx.fillStyle = "black";
+            ctx.fillText("scroll or up/down arrow keys to change value, left/rightarrow keys to change selected", mx - 20, my - 20);
+            ctx.fillText("selected: " + objMenu.selected, mx - 20, my - 10);
+            ctx.globalAlpha = 1;
+
+        } // object menu
+
+
+
+
+
+
+
+
+
+        function showTime() {
+
+            let time = new Date();
+            let hour = "";
+            let min = "";
+            let sec = "";
+            if (time.getHours() > 12) { hour = (time.getHours() - 12); } else { hour = time.getHours(); }
+            if (time.getMinutes() < 10) { min = "0" + time.getMinutes(); } else { min = time.getMinutes(); }
+            if (time.getSeconds() < 10) { sec = "0" + time.getSeconds(); } else { sec = time.getSeconds(); }
+            if (time.getHours() <= 12) { sec += " AM"; } else { sec += " PM"; }
+            ctx.fillText(hour + ":" + min + ":" + sec, 7, 20);
+
+        } // showTime
+
+
+
+
+
+
+
+
+
+        function dU(thing) {
+
+            return String(thing)[0].toUpperCase();
+
+        } // more debug
+
+        function placeThing(args) { // place thing
+
+            let n = new clone();
+            n.x = !(args.x) ? 0 : args.x;
+
+        } // thing placer
+
+
+
+
+
+        function showDebug() { // run debug
+
+            ctx.fillText(debug, 10, 35);
+            debug = "mx: " + mx + " my: " + my + " plr yv: " + player.yv;
+            ctx.fillText("mxc: " + mxc + " myc: " + myc, 10, 50);
+            //debug2 = "yv: " + Math.round(player.yv) + " xv: " + Math.round(player.xv) + " | grounded: " + dU(player.onGround) + " player colliders: left: " + dU(player.contacts.left) + " right: " + dU(player.contacts.right) + " top: " + dU(player.contacts.top) + " bottom: " + dU(player.contacts.bottom);
+            $("#m").html(
+                "c.x: " + c.x + " c.y: " + c.y + // this does camera. pos
+                "<br /> player x: " + Math.round(player.x) + " player y: " + Math.round(player.y) +
+                "<br /> mx: " + mx + " my: " + my +
+                "<br /> placed platform x: " + placement.x + " placed platform y: " + placement.y +
+                "<br />player x - c.x: " + Math.round(player.x - c.x) + " player y - c.y: " + Math.round(player.y - c.y) +
+                "<br />angle from player to mouse: " + pToM
+                //new stuff here
+            ); // jQuery is pretty good
+        } // run debug
+
+
+
+
+
+
+        clone.prototype.objects = function () { // run all objects
+
+            this.runDelay();
+            if (this.mainType == "player" && !player.tickDone) this.runPlayer();
+            if (this.mainType == "obj") this.runObjs();
+            if (this.mainType == "proj") this.runProjectiles();
+
+        } // run all objects
+
+
+
+
+
+
+        clone.prototype.runObjs = function () { // run objects
+
+            if (this.move) { // moving platform
+
+                if ((this.x <= this.moveX1 && this.moveX1 < this.moveX2) || (this.x <= this.moveX2 && this.moveX2 < this.moveX1)) this.moveXSide = "r";
+                if ((this.x >= this.moveX2 && this.moveX1 < this.moveX2) || (this.x >= this.moveX1 && this.moveX2 < this.moveX1)) this.moveXSide = "l";
+                if ((this.y >= this.moveY1 && this.moveY1 > this.moveY2) || (this.y >= this.moveY2 && this.moveY2 > this.moveY1)) this.moveYSide = "u";
+                if ((this.y <= this.moveY2 && this.moveY1 > this.moveY2) || (this.y <= this.moveY1 && this.moveY2 > this.moveY1)) this.moveYSide = "d";
+                if (this.moveXSide == "r") this.x += this.moveVelX;
+                if (this.moveXSide == "l") this.x -= this.moveVelX;
+                if (this.moveYSide == "u") this.y -= this.moveVelY;
+                if (this.moveYSide == "d") this.y += this.moveVelY;
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = "blue";
+                ctx.fillRect(this.moveX1 + c.x, this.moveY1 + c.y, this.w, this.h);
+                ctx.fillStyle = "red";
+                ctx.fillRect(this.moveX2 + c.x, this.moveY2 + c.y, this.w, this.h);
+                ctx.fillStyle = "black";
+                ctx.globalAlpha = 1.0;
+
+            }
+
+            if (mxc < this.x + this.w + 10 && mxc > this.x - 10 && myc < this.y + this.h + 10 && myc > this.y - 10) {
+
+                ctx.fillStyle = "orange";
+                ctx.fillRect(this.x + c.x - 1, this.y + c.y - 1, this.w + 2, this.h + 2);
+                ctx.fillStyle = "blue";
+                ctx.fillText("x: " + Math.round(this.x) + " y: " + Math.round(this.y) + " [" + solids.indexOf(this) + "]", mx, my - 30);
+                ctx.fillText("mx1: " + this.moveX1 + " mx2: " + this.moveX2, mx, my - 20);
+
+            } // debug thingys
+
+
+
+        } // run objects
+
+
+
+        clone.prototype.runProjectiles = function () {
+
+            ctx.fillStyle = "orange"; ctx.fillRect(this.x + c.x, this.y + c.y, this.cW, this.cH); ctx.fillStyle = "black";
+            if (this.life > 1000 / this.vel || this.collide(solids)) {
+                projectiles.splice(projectiles.indexOf(this), 1);
+
+            }
+            this.x += this.xv;
+            this.y += this.yv;
+            this.life += 1;
+
+        } // run all projectiles
+
+
+        function camera() {
+
+            mxc = mx - c.x;
+            myc = my - c.y;
+            let yvD = Math.abs(player.yv - player.pyv);
+            let xvD = Math.abs(player.xv - player.pxv);
+            runDelay(c);
+
+            if (yvD > 5) {
+
+                c.delay.shake = Math.round(yvD / 2);
+                c.shakeStr = yvD;
+
+            } // impact shake y
+
+            if (xvD > 5) {
+
+                c.delay.shake = Math.round(xvD / 2);
+                c.shakeStr = xvD;
+
+            } // impact shake x
+
+            if (c.delay.shake > 0) {
+
+                c.shake = (Math.random() < 0.5) ? Math.random() * -c.shakeStr : Math.random() * c.shakeStr;
+
+            } // shake the camera
+
+            if (c.delay.shake < 0) c.shake = (Math.random() < 0.5) ? Math.random() * -c.shakeStr : Math.random() * c.shakeStr;
+            if (c.delay.shake == 0) { c.shake = 0; c.shakeStr = 5; }
+        }
+
+
+
+        function runDelay(obj) {
+
+            if (obj.delay !== undefined) {
+                let i = 0;
+                let l = Object.keys(obj.delay).length;
+                let objectKey = Object.keys(obj.delay);
+                let objKey = "";
+                for (i; i < l; i++) {
+                    objKey = obj.delay[objectKey[i]];
+                    if (objKey < 0) obj.delay[objectKey[i]] += 1;
+                    if (objKey > 0) obj.delay[objectKey[i]] -= 1;
+                }
+            }
+        } // function, if, for
+
+
+        clone.prototype.runDelay = function (obj) {
+
+            if (this.delay !== undefined) {
+                let i = 0;
+                let l = Object.keys(this.delay).length;
+                let objectKey = Object.keys(this.delay);
+                let objKey = "";
+                for (i; i < l; i++) {
+                    objKey = this.delay[objectKey[i]];
+                    if (objKey < 0) this.delay[objectKey[i]] += 1;
+                    if (objKey > 0) this.delay[objectKey[i]] -= 1;
+                }
+
+
+
+            }
+
+
+
+
+        }
+
+
+
+
+        clone.prototype.runPlayer = function () { // run player main
+
+            runPlayerX();
+            runPlayerY();
+
+            camera();
+
+            player.afterImage.x[player.afterImage.count] = player.px; // save player position
+            player.afterImage.y[player.afterImage.count] = player.py;
+            player.afterImage.opacity[player.afterImage.count] = 5; // set the closest afterimage to have most opacity
+            let i = 0;
+            for (i; i < 5; i++) { // reduce opacity of all the afterimages
+                player.afterImage.opacity[i] -= 1;
+                if (player.afterImage.opacity[i] <= 0) player.afterImage.opacity[i] = 0.1;
+            }
+            player.afterImage.count += 1;
+            if (player.afterImage.count == 5) player.afterImage.count = 0;
+            for (i = 0; i < 5; i++) { // render all afterimages
+                ctx.globalAlpha = player.afterImage.opacity[i] / 15;
+                ctx.drawImage(document.getElementById("player"), player.afterImage.x[i] + c.x, player.afterImage.y[i] + c.y, player.w, player.h);
+            }
+            ctx.globalAlpha = 1; // reset alpha
+
+
+            if (player.touching.move && player.contacts.bottom) {
+
+                if (player.touching.moveXSide == "r") player.x += player.touching.moveVelX;
+                if (player.touching.moveXSide == "l") player.x -= player.touching.moveVelX;
+                if (player.touching.moveYSide == "u") player.y -= player.touching.moveVelY - 1;
+                if (player.touching.moveYSide == "d") player.y += player.touching.moveVelY;
+
+
+            } // handle player interaction with moving platforms
+
+
+
+            if (!player.toggles.gravity) { // fly
+                let flySpeed = 3;
+                if (input.keys.shift) { flySpeed = 1; } else { flySpeed = 5; }
+                if (input.keys.a) player.x -= flySpeed;
+                if (input.keys.d) player.x += flySpeed;
+                if (input.keys.w) player.y -= flySpeed;
+                if (input.keys.s) player.y += flySpeed;
+                player.yv = 0;
+                player.xv = 0;
+
+            } // fly
+
+            if (player.tele.preview) {
+
+                player.tele.x = mxc;
+                player.tele.y = myc;
+                ctx.fillStyle = "orange"; ctx.fillRect(mx, my, player.w, player.h); ctx.fillStyle = "black";
+
+            } // teleport preview
+
+            player.tickDone = true;
+            playerColl(solids);
+
+        } // main player area
+
+        function runPlayerX() { // run player x
+
+            c.x -= Math.round(((player.x + c.x - canvas.width / 2) / c.smooth) + c.offsetX + c.shake); // update camera. x
+
+            if (input.keys.a && player.xv > -player.mxv && player.toggles.xAxis) player.xv -= player.xa / 15;
+            if (input.keys.d && player.xv < player.mxv && player.toggles.xAxis) player.xv += player.xa / 15;
+
+            if (!input.keys.a && !input.keys.d) { // friction
+
+                if (Math.abs(player.xv) < player.mxv / 30) { // sets xv to zero if it's too small and handles friction
+
+                    player.xv = 0;
+
+                } /* stop player from friction */ else {
+
+                    if (player.contacts.bottom) player.xv -= player.xv / 15;
+
+                } // friction
+
+            } // not a or d bracket
+
+            if (player.contacts.right || player.contacts.left) { // check for either wall coll
+
+                player.x = player.px;
+
+
+
+
+
+
+
+
+
+
+            } // check for either wall coll
+
+            if (player.contacts.bottom && !player.contacts.right && !player.contacts.left && !player.contacts.top && player.yv == 0 && !player.touching.move) {
+
+                player.posSave.x = player.x;
+                player.posSave.y = player.y;
+
+            } // save player's most recent stable position (stable being "safe"
+
+            if (player.toggles.xAxis) player.x += player.xv;
+
+        } // run player x
+
+
+        function wallSlide(args) {
+
+            if (!input.keys.w) {
+
+                player.x = args.normal; // push player out of wall
+                player.abil.dbJU = false;
+                player.abil.dbJL = player.abil.dbJs;
+
+            } else { // walljump/slide
+
+                player.x = args.slide;
+                if (player.yv >= 1) player.yv = 1;
+
+                if (input.keys.w) { // walljump
+
+                    player.yv = player.jp;
+                    player.xv -= args.jumpV;
+                    player.x -= args.jumpV;
+
+                } // walljump
+
+            } // walljump/slide
+
+        } // wallslide
+
+
+
+
+        function runPlayerY() {
+
+            c.y -= Math.round(((player.y + c.y - canvas.height / 2) / c.smooth) + c.offsetY + c.shake); // update camera. y
+
+
+            if (input.keys.s && player.toggles.gravity) { // squish player
+
+                if (player.h != player.heights.squish) player.y += player.heights.squish;
+                player.h = player.heights.squish;
+                player.heights.squished = true;
+
+            } else {
+                if (!player.contacts.top) {
+                    if (player.h != player.heights.norm) player.y -= player.heights.squish;
+                    player.heights.squished = false;
+                    player.h = player.heights.norm;
+
+                } // is player hitting top
+            } // unsquish player
+
+            if (player.contacts.top && player.yv <= 0 && player.toggles.yAxis) { // takes player outta ceilings
+
+                player.yv = 0;
+                player.y = player.touching.y + player.touching.h + 0.1 + player.touching.moveVelY * 2;
+                //player.y += (player.touching.move) ? 0.1 : 0;
+
+            } // takes player outta ceilings
+
+            if (player.toggles.gravity && player.toggles.yAxis) { // normal gravity
+
+                gravity();
+                player.y += player.yv;
+
+            } // normal gravity
+
+
+
+        } // run player y bracket
+
+
+
+
+        function keysDown(mEvent) { // handles player stuff when input.keys down
+
+            let i = event.key.toLowerCase();
+            if (i == "x") player.tele.preview = (player.tele.preview) ? false : true;
+            if (i == "c") objMenu.open = (objMenu.open) ? false : true;
+            if (i == "z") player.toggles.gravity = (player.toggles.gravity) ? false : true;
+            if (i == "i") { // toggle frame advance
+                player.toggles.frameAdv = (player.toggles.frameAdv) ? false : true;
+
+                if (player.toggles.frameAdv) {
+                    clearInterval(game);
+                } else {
+                    game = setInterval(tick, 1000 / fps);
+                }
+
+            } // toggle frame advance
+            if (i == "arrowright" && player.toggles.frameAdv) setTimeout(tick);
+            if (objMenu.open) { // order of things: w, h, TBD
+                let sel = objMenu.selected;
+                if (i == "arrowleft" && sel == "w") { }// do nothing
+                if (i == "arrowleft" && sel == "h") sel = "w";
+                if (i == "arrowright" && sel == "w") sel = "h";
+                if (i == "arrowright" && sel == "h") { } // nothing yet, add something later (maybe movement n stuff)
+                objMenu.selected = sel;
+                if (i == "arrowup") objMenu[objMenu.selected] += (input.keys.shift) ? 20 : 5;
+                if (i == "arrowdown") objMenu[objMenu.selected] -= (input.keys.shift) ? 20 : 5;
+                if (objMenu[objMenu.selected] <= 0) objMenu[objMenu.selected] = 1;
+            } // make sure that objmenu is open before doing stuff
+            if (i == "w") { // w stuff
+
+                if (player.abil.dbJ && player.abil.dbJL > 0 && !player.abil.dbJU && !player.contacts.left && !player.contacts.right && !player.contacts.top && player.delay.jump == 0) { // double jump
+
+                    player.yv = player.jp;
+                    if (player.abil.dbJL == 0) player.abil.dbJU = true;
+                    if (player.abil.dbJL > 0) player.abil.dbJL -= 1;
+
+                } // double jump
+
+            } // w stuff
+
+            if (i == "o") { } // nothing yet
+            if (i == "9") randLvl();
+
+
+        } // handles player stuff when input.keys down
+
+
+
+
+
+        function keysUp(mEvent) {
+
+            let i = event.key.toLowerCase();
+
+            if (i == "x" && !player.tele.preview) {
+
+                player.x = player.tele.x;
+                player.y = player.tele.y;
+
+            } // teleport player
+
+        } // handles player stuff when input.keys up
+
+
+
+
+
+        function startPlayer() {
+            player.toggles.xAxis = true;
+            player.toggles.yAxis = true;
+        }
+        function gravity() { // run gravity
+
+            if (player.y > 4000) { // keep player from falling for forever
+
+                if (player.posSave !== undefined) {
+
+                    player.x = player.posSave.x;
+                    player.y = player.posSave.y;
+
+                } else {
+
+                    player.x = 0;
+                    player.y = 0;
+
+                } // normal player reset
+
+                player.xv = 0;
+                player.yv = 0;
+                player.toggles.xAxis = false;
+                player.toggles.yAxis = false;
+                setTimeout(startPlayer, 2000);
+
+
+            } // resets player to spawn position OR to the last stable position
+
+            if (player.contacts.bottom) { // not fall
+
+                player.yv = 0;
+                player.onGround = true;
+                player.abil.dbJU = false;
+                player.abil.dbJL = player.abil.dbJs;
+
+            } else { // fall
+
+                if (player.touching.moveYSide != "d" || !player.contacts.top) player.yv += grav;
+                player.onGround = false;
+                if (player.abil.dbJs > 1) {
+                    if (player.abil.dbJL == 1) ctx.fillStyle = "red";
+                    if (player.abil.dbJL > 1 && player.abil.dbJL < player.abil.dbJs) ctx.fillStyle = "yellow";
+
+                } // color!
+                if (player.abil.dbJL == 0) ctx.fillStyle = "darkgray";
+                if (player.abil.dbJL == player.abil.dbJs) ctx.fillStyle = "green";
+                ctx.fillRect(player.x + c.x - player.w, player.y + c.y, 5, 5);
+                ctx.fillStyle = "black";
+            } // else bracket
+
+            if (input.keys.w && player.onGround && !player.contacts.top) { // normal jump
+
+                player.yv = player.jp;
+                if (player.touching.move) {
+
+                    if (player.touching.moveXSide == "r") player.xv += player.touching.moveVelX;
+                    if (player.touching.moveXSide == "l") player.xv -= player.touching.moveVelX;
+                    if (player.touching.moveYSide == "u") player.yv -= player.touching.moveVelY;
+                    if (player.touching.moveYSide == "d") player.yv += player.touching.moveVelY;
+
+                }
+
+            } // this causes the player to jump with the player's assigned jump power
+
+        } // run gravity
+
+
+
+
+
+
+        function keyHeld(mEvent) {
+
+            input.keys[event.key.toLowerCase()] = (makeTextWrk) ? false : true;
+            if (event.key === " ") input.keys.space = true;
+            input.keys.current = event.key;
+
+            if (!makeTextWrk) mEvent.preventDefault();
+
+        } // keyDown bracket
+
+
+
+
+
+
+
+        function keyUp(mEvent) {
+
+            input.keys[event.key.toLowerCase()] = false;
+            if (event.key === " ") input.keys.space = false;
+            input.keys.current = event.key;
+
+            mEvent.preventDefault();
+
+        } // keyUp bracket
+
+
+
+        function mouseDown(mEvent) { // mouse down
+
+            switch (event.button) {
+
+                case 0: input.mouse.LB = true; break;
+                case 1: input.mouse.MB = true; break;
+                case 2: input.mouse.RB = true; break;
+
+            } // switch
+
+            if (objMenu.open) {
+
+                cloneObj({ x: mxc, y: myc, type: "platform", w: objMenu.w, h: objMenu.h });
+                placement.x = mxc;
+                placement.y = myc;
+
+            } // place an object
+
+
+
+            //mEvent.preventDefault();
+
+        } // mouse down
+
+
+
+        function mouseUp(mEvent) { // mouse up
+
+            switch (event.button) {
+
+                case 0: input.mouse.LB = false; break;
+                case 1: input.mouse.MB = false; break;
+                case 2: input.mouse.RB = false; break;
+
+            } // switch
+            if (!objMenu.open) {
+                cloneProjectile({});
+                c.delay.shake = 10;
+            }
+            mEvent.preventDefault();
+
+        } // mouse up
+
+
+
+
+        function scroll(mE) {
+
+
+            if (objMenu.open) {
+
+                if (objMenu.selected == "w") objMenu.w += Math.round(event.deltaY);
+                if (objMenu.selected == "h") objMenu.h += Math.round(event.deltaY);
+                if (objMenu.w < 0) objMenu.w = 1;
+                if (objMenu.h < 0) objMenu.h = 1;
+
+            } else { objMenu.w = 10; objMenu.h = 10; }
+
+
+
+
+
+
+            mE.preventDefault();
+
+        } // scrolling
+
+
+
+
+
+
+
+
+
+
+
+
+        clone.prototype.collide = function (object) { // this object is touching other object
+            let obj = "";
+            for (let i = 0; i < object.length; i++) {
+                obj = object[i];
+                if (obj.coll) { // is this capable of colliding?
+                    ctx.fillRect(this.x + c.x, this.y + c.y, 3, 3);
+                    if (this.x + this.cW >= obj.x && this.x <= obj.x + obj.w && this.y <= obj.y + obj.h && this.y + this.cH >= obj.y) return true;
+
+                } // check for collide. capability
+
+            } // running through instances bracket aka for
+
+        } // collide. bracket
+
+
+
+
+        function playerColl(object) {
+
+            player.contacts.right = false; player.contacts.left = false; player.contacts.top = false; player.contacts.bottom = false;
+            let l = object.length
+            let obj = NaN;
+            let i = 0
+            for (i; i < l; i++) {
+
+                obj = object[i];
+                if (!obj.onScreen) continue;
+                if (player.x + player.w >= obj.x - player.xv /*right*/ && player.x <= obj.x + obj.w - player.xv /*left*/ && player.y <= obj.y + obj.h - player.yv /*top*/ && player.y + player.h >= obj.y - player.yv  /*bottom*/) { // general, just checks for a basic contact
+
+                    ctx.fillStyle = "orange"; ctx.fillRect(obj.x + c.x - 1, obj.y + c.y - 1, obj.w + 2, obj.h + 2); ctx.fillStyle = "black";
+
+                    player.touching = obj.touching;
+
+                    if (!obj.coll) continue;
+                    if (obj.lvlTrig) {
+
+                        lvl = obj.lvl + 1;
+
+                        randLvl();
+
+
+                    } // change level
+                    if (player.y + player.yv <= obj.y + obj.h && player.y > obj.y + obj.h + player.yv) {
+
+                        player.contacts.top = true;
+                        continue;
+
+                    } // contacted on top
+
+                    if (player.y + player.h + player.yv >= obj.y && player.y < obj.y + player.yv && player.x + player.w > obj.x && player.x < obj.x + obj.w) {
+
+                        player.contacts.bottom = true;
+                        player.y = (obj.move) ? player.touching.y - player.h + 1 : player.touching.y - player.h;
+                        continue;
+
+                    } // contacted on bottom
+
+                    if (player.x + player.w >= obj.x && player.x < obj.x + player.xv) {
+                        if (player.y + player.h > obj.y && player.y < obj.y + obj.h) {
+                            player.contacts.right = true;
+                            player.xv = 0;
+                            wallSlide({ key: input.keys.d, normal: player.touching.x - player.w - 0.1, slide: player.touching.x - player.w, jumpV: 3 });
+                            continue;
+
+                        }
+                    } // contacted on right
+
+                    if (player.x <= obj.x + obj.w && player.x > obj.x + player.xv) {
+                        if (player.y + player.h > obj.y && player.y < obj.y + obj.h) {
+                            player.contacts.left = true;
+                            player.xv = 0;
+                            wallSlide({ key: input.keys.a, normal: player.touching.x + player.touching.w + 0.1, slide: player.touching.x + player.touching.w, jumpV: -3 });
+                            continue;
+
+                        }
+                    } // contacted on left
+
+                    if (player.contacts.left && player.contacts.right && player.contacts.top && player.contacts.bottom) break;
+
+                } // general collider check
+            } // run through the loop
+        } // player collisions
+
+
+
+
+
+        function clone({ x, y, flipV, flipH, angle, color, rT, type, mainType, w, h, text }) { // cloning stuff
+
+            this.x = x || 0;
+            this.y = y || 0;
+            this.px = this.x;
+            this.py = this.y;
+            this.flipV = flipV || false;
+            this.flipH = flipH || false;
+            this.angle = 0;
+            this.color = color || "black";
+            this.xv = 0;
+            this.yv = 0;
+            this.pxv = this.xv;
+            this.pyv = this.yv;
+            this.mxv = 3;
+            this.type = type;
+            this.rT = rT || "img";
+            this.w = w || 0;
+            this.h = h || 0;
+            if (this.rT == "img") {
+                this.img = new Image(document.getElementById("platform"));
+                this.w = w || document.getElementById(this.type).width;
+                this.h = h || document.getElementById(this.type).height;
+            }
+            if (this.rT == "rect") {
+                //idk yet
+            }
+            if (this.rT == "text") {
+                this.text = text || "no text defined";
+                let measuredText = ctx.measureText(this.text);
+                this.w = measuredText.width;
+                this.h = measuredText.width / this.text.length;
+
+            }
+
+            this.mainType = mainType || type;
+            this.xa = 3;
+            this.touching = { mainType: this.mainType, x: this.x, y: this.y, w: this.w, h: this.h };
+            this.lvl = lvl;
+            this.onScreen = true;
+
+
+        } // cloning stuff
+
+
+        clone.prototype.getOnScreen = function (margin = 10) {
+
+            if (this.x + this.w + c.x > -margin && this.x + c.x < canvas.width + margin && this.y + c.y < canvas.height + margin && this.y + this.h + c.y > -margin) {
+                return true;
+            } else {
+                return false;
+            }
+
+
+        }
+
+
+
+        function cloneObj({ x, y, type, mainType, angle, coll, w, h, rT, move, moveX1, moveX2, moveY1, moveY2, moveVel, moveWait, color, lvlTrig, text, random }) { // clone. object
+
+            let n = new clone({ type: type, rT: rT, text: text });
+            n.rT = rT || "img";
+            n.x = x || 0;
+            n.y = y || 0;
+            n.angle = angle || 0;
+            n.type = type;
+            n.mainType = "obj";
+            n.coll = coll || true;
+            if (n.rT == "text") n.coll = coll || false;
+            n.w = w || n.w;
+            n.h = h || n.h;
+            n.lvl = lvl;
+            n.move = move || false;
+            n.color = color || "black";
+            if (n.move) {
+                n.moveSide = NaN;
+                n.moveX1 = moveX1 || n.x;
+                n.moveX2 = moveX2 || n.x + Math.round(Math.random() * 300);
+                n.moveY1 = moveY1 || n.y;
+                n.moveY2 = moveY2 || n.y + Math.round(Math.random() * 100);
+                n.moveVel = moveVel || 1;
+                n.moveVel /= 100;
+                n.moveVelX = Math.abs((n.moveX1 - n.moveX2)) * n.moveVel;
+                n.moveVelY = Math.abs((n.moveY1 - n.moveY2)) * n.moveVel;
+                n.moveWait = moveWait * 1000 || 0;
+            } else {
+                n.moveVelX = 0;
+                n.moveVelY = 0;
+            }
+            n.lvlTrig = lvlTrig || false;
+            n.random = random || false;
+            solids.push(n);
+
+        } // clone. object
+
+        function cloneProjectile({ x, y, w, h, angle, dir, type, mainType, vel }) {
+
+            let n = new clone({ rT: "rect" });
+            n.dir = dir || pToM;
+            n.angle = angle || pToM * Math.PI / 180;
+            n.mainType = "proj";
+            n.type = type || "pBullet";
+            n.vel = vel || 20;
+            n.xv = n.vel * Math.cos(n.dir);
+            n.yv = n.vel * Math.sin(n.dir);
+            player.xv -= n.xv / n.vel;
+            player.yv -= n.yv / n.vel;
+            n.w = w || n.vel;
+            n.h = h || 2;
+            n.cW = (n.xv == 0) ? 2 : Math.abs(n.xv * 1.1);
+            n.cH = (n.yv == 0) ? 2 : Math.abs(n.yv * 1.1);
+            n.x = x || (player.x + player.w / 2) - n.cW / 2;
+            n.y = y || (player.y + player.h / 2) - n.cH / 2;
+            n.x += n.xv / (player.w / 3);
+            n.y += n.yv / (player.h / 3);
+            n.life = 0;
+            projectiles.push(n);
+
+        } // make a projectile
+
+
+
+
+
+
+        clone.prototype.tick = function () {
+
+            this.px = this.x;
+            this.py = this.y;
+            this.pxv = this.xv;
+            this.pyv = this.yv;
+            this.onScreen = this.getOnScreen();
+            if (this.mainType != "player") this.touching = {
+                mainType: this.mainType,
+                x: this.x, y: this.y, w: this.w, h: this.h,
+                moveVel: this.moveVel,
+                moveXSide: this.moveXSide, moveYSide: this.moveYSide,
+                move: this.move,
+                moveVelX: this.moveVelX,
+                moveVelY: this.moveVelY,
+                lvlTrig: this.lvlTrig
+            };
+            this.objects(); // run all the objects
+            this.fx();
+
+        } // clones prototype tick
+
+
+        clone.prototype.fx = function () {
+
+            ctx.fillStyle = "black";
+            ctx.save();
+            if (this.onScreen) {
+                let t = { w: this.w, h: this.h };
+                t.w = !(this.cW) ? this.w / 2 : this.cW / 2;
+                t.h = !(this.cH) ? this.h / 2 : this.cH / 2;
+                ctx.translate(this.x + c.x + t.w, this.y + c.y + t.h);
+                ctx.rotate(this.angle * 180 / Math.PI);
+                ctx.fillStyle = this.color;
+                if (this.flipV) ctx.scale(1, -1);
+                if (this.flipH) ctx.scale(-1, 1);
+                if (this.rT == "img") ctx.drawImage(document.getElementById(this.type), -t.w, -t.h, this.w, this.h); // draw image after everything's been applied
+                if (this.rT == "rect") ctx.fillRect(-t.w, -t.h, this.w, this.h);
+                if (this.rT == "text") ctx.fillText(this.text, -t.w, t.h);
+            }
+            ctx.restore();
+
+        } // runs graphical effects for objects .(rotation, whether to flip them or not, that kinda stuff)
+
+
+
+
+
+
+        window.onload = function onLoad() {
+
+            let game = setInterval(tick, 1000 / fps);
+
+        } // run everything when the page loads
+
+    </script>
+
+</body>
+
+</html>
