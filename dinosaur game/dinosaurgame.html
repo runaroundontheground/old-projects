@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+
+<head>
+    <title> dinosaur game </title>
+</head>
+
+<body>
+    <a href="../index.html">back to home</a>
+    <iframe src="https://s2js.com/runaroundontheground/dinosaurgame" style="width: 75vw; height: 75vh;"></iframe>
+    <!-- the code for this page
+    <HTML>
+    <head>
+        <title> dinosaur game </title>
+    </head>
+
+    <body>
+        <canvas id = "canvas" width = 300 height = 300 style = "background-color: gray; position: absolute;"
+        onmouseenter = "blockOtherInput = true;"
+        onmouseleave = "blockOtherInput = false;"
+        ></canvas>
+        
+        <div id = "objectCreatorSettings" style = "display: none; position: absolute;">
+            <p>object creation settings</p>
+            
+            <label for = "objectCreatorWidth">width: </label>
+            <input id = "objectCreatorWidth" style = "width: 50px; border-color: rgba(0, 0, 0, 0);" type = "number"> 
+            
+            <label for = "objectCreatorHeight">height: </label>
+            <input id = "objectCreatorHeight" style = "width: 50px; border-color: rgba(0, 0, 0, 0);" type = "number">
+            
+            <label for = "objectCreatorColor">color: </label>
+            <input id = "objectCreatorColor" type = "color" style = "border-color: rgba(0, 0, 0, 0);">
+            
+            <button onclick = "updateObjectSettings()">apply all</button>
+            
+        </div>
+        <p id = "logger"></p>
+
+        <script>
+        
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d"); 
+        let blockOtherInput = false;
+        
+        const objectCreatorSettings = document.getElementById("objectCreatorSettings");
+        const objectCreatorWidth = document.getElementById("objectCreatorWidth");
+        const objectCreatorHeight = document.getElementById("objectCreatorHeight");
+        const objectCreatorColor = document.getElementById("objectCreatorColor");
+        const logger = document.getElementById("logger");
+        function log (content) {logger.innerHTML += "<br>" + content;}
+        
+         // make canvas centered and stuff
+        function styleCanvas(){
+            let colors = ["orange", "blue", "white", "yellow", "red", "purple", "crimson"];
+            let startColor = colors[Math.floor(colors.length * Math.random())];
+            let endColor = colors[Math.floor(colors.length * Math.random())];
+            canvas.style.backgroundImage = "linear-gradient(" + startColor + ", " + endColor + ")";
+            canvas.width = window.innerWidth / 2;
+            canvas.height = canvas.width / 2;
+            canvas.style.left = (window.innerWidth - canvas.width) / 2;
+            canvas.style.top = (window.innerHeight - canvas.height) / 2;
+        }
+        styleCanvas();
+         // object creation thingy
+        objectCreatorSettings.style.left = canvas.style.left;
+        
+         // create regional things, for performance
+        let regionSize = Math.floor(canvas.width / 100) * 100;
+        let screenRegionSize = [Math.ceil(canvas.width / regionSize), Math.ceil(canvas.height / regionSize) + 1];
+        
+         // make random variablesp
+        let fps = 60;
+        let timeScale = 1;
+        let gravity = 0.2;
+        let keys = {};
+        let keysPressed = {};
+        let mouseButtons = {};
+        let img = {
+            dino: {
+                idle: {
+                    img: new Image(),
+                    frame: 0,
+                    frameCount: 1,
+                    midFrame: 0,
+                    lastMidFrame: 0,
+                    singleFrame: true
+                },
+                die: {
+                    img: new Image(),
+                    frame: 0,
+                    frameCount: 1,
+                    midFrame: 0,
+                    lastMidFrame: 0,
+                    singleFrame: true
+                },
+                run: {
+                    img: new Image(),
+                    frame: 0,
+                    frameCount: 2,
+                    midFrame: 0,
+                    lastMidFrame: 7,
+                    singleFrame: false
+                },
+                duck: {
+                    img: new Image(),
+                    frame: 0,
+                    frameCount: 2,
+                    midFrame: 0,
+                    lastMidFrame: 7,
+                    singleFrame: false
+                }
+            }
+        };
+        
+        img.dino.idle.img.src = "dinoidle.png"; img.dino.idle.img.width /= 2; img.dino.idle.img.height /= 2;
+        img.dino.die.img.src = "dinodie.png"; img.dino.die.img.width /= 2; img.dino.die.img.height /= 2;
+        img.dino.run.img.src = "dinorun.png"; img.dino.run.img.width /= 2; img.dino.run.img.height /= 2;
+        img.dino.duck.img.src = "dinoduck.png"; img.dino.duck.img.width /= 2; img.dino.duck.img.height /= 2;
+        
+        let camera = {
+            x: 0,
+            y: 0,
+            shakeTime: 0,
+            shakeStr: 5,
+            smoothness: 15,
+            update: function (centerX, centerY) {
+                
+                this.x -= Math.round((centerX + this.x - canvas.width / 2) / this.smoothness);
+                this.y -= Math.round((centerY + this.y - canvas.height / 2) / this.smoothness);
+            }
+        };
+        
+        let mouse = {
+            absX: 0,
+            absY: 0,
+            x: 0,
+            y: 0,
+        }
+        
+        let enemies = [];
+        let objects = [];
+        let regions = {
+            "0,0": [],
+            "0,1": [],
+            "1,0": [],
+            "1,1": []
+        };
+         // regionx,regiony
+        let objectCreatorObject = {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            
+        }
+        
+        let simulatedObjects = [];
+        
+        function Find () {
+            this.region = function (x, y) {
+                
+                x = Math.floor(x / regionSize);
+                y = Math.floor(y / regionSize);
+                let regionPos = [x, y];
+                
+                return regionPos;    
+            }
+                
+        }
+        
+        
+        
+        
+        function Player () {
+            
+            this.x = 0;
+            this.y = 0;
+            
+            this.angle = 0;
+            
+            this.px = 0;
+            this.py = 0;
+            
+            this.xv = 0;
+            this.yv = 0;
+            
+            this.maxXV = 3;
+            this.maxYV = 10;
+            this.accel = 0.3;
+            
+            this.jumpPower = 3;
+            this.friction = 0.1;
+            
+            this.img = img.dino;
+            this.anim = "idle";
+            
+            this.abilityToggles = {
+                doubleJump: true
+            }
+            
+            this.abilitesUsed = {
+                doubleJump: false
+            }
+            
+            this.collisions = {
+                L: false,
+                R: false,
+                T: false,
+                B: false
+            }
+            this.hitbox = {
+                x: 0,
+                y: 0,
+                width: this.img.idle.img.width / 1.5,
+                height: this.img.idle.img.height
+            }
+            this.collidedObjects = {
+                L: undefined,
+                R: undefined,
+                T: undefined,
+                B: undefined,
+                all: []
+            }
+            
+            this.width = 200;
+            this.height = 20;
+            
+            this.flipH = false;
+            this.flipV = false;
+            
+            this.render = function () {
+                
+                this.angle = this.xv;
+                this.angle += (this.flipH) ? this.yv : -this.yv;
+                
+                ctx.save();
+                
+                let currentAnim = this.img[this.anim];
+                
+                this.width = currentAnim.img.width / currentAnim.frameCount;
+                this.height = currentAnim.img.height;
+                
+                
+                ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                ctx.rotate(this.angle * Math.PI/180);
+                
+                if (this.flipH) {
+                    ctx.scale(-1, 1);
+                }
+                
+                if (this.flipV) {
+                    ctx.scale(1, -1);
+                }
+                if (this.anim == "duck") ctx.translate(0, this.height/1.4);
+                ctx.drawImage(
+                    currentAnim.img, this.width * currentAnim.frame * 2, 0, this.width*2, this.height*2,
+                    -this.width / 2, -this.height / 2, this.width, this.height
+                );
+                
+                ctx.restore();
+            }
+            
+            this.animate = function () {
+                
+                let currentAnim = this.img[this.anim];
+                
+                if (!currentAnim.singleFrame) {
+                    if (currentAnim.midFrame < currentAnim.lastMidFrame - 1) currentAnim.midFrame += 1;
+                    else {
+                        
+                        currentAnim.midFrame = 0;
+                        
+                        if (currentAnim.frame < currentAnim.frameCount - 1) currentAnim.frame += 1;
+                        else currentAnim.frame = 0;
+                        
+                    }
+                }
+                
+                
+            }
+            
+            this.moveX = function () {
+                
+                this.px = this.x;
+                this.x += this.xv * timeScale;
+                this.hitbox.x = this.x + this.hitbox.width / 3.1;
+                function resetX (setXTo) {player.xv = 0; player.x = setXTo;};
+                if (this.collisions.R && this.xv > 0) {
+                    let resetPos = this.collidedObjects.R.x - this.hitbox.width * 1.3;
+                    if (this.anim == "duck") {
+                        if (this.y + this.hitbox.height / 2 < this.collidedObjects.R.y + this.collidedObjects.R.height) {
+                            resetX(resetPos);
+                        }
+                    } else {
+                        resetX(resetPos);
+                    }
+                }
+                
+                if (this.collisions.L && this.xv < 0) {
+                    let resetPos = this.collidedObjects.L.x + this.collidedObjects.L.width - this.hitbox.width / 2;
+                    if (this.anim == "duck") {
+                        if (this.y + this.hitbox.height / 2 < this.collidedObjects.L.y + this.collidedObjects.L.height) {
+                            resetX(resetPos);
+                        }
+                    } else {
+                        resetX(resetPos);
+                    }
+                }
+                
+                if (keys.a && this.xv > -this.maxXV) this.xv -= this.accel * timeScale;
+                if (keys.d && this.xv < this.maxXV) this.xv += this.accel * timeScale;
+                
+                if (((!keys.a && !keys.d) || (keys.a && keys.d))) {
+                    
+                    this.xv -= (this.xv * this.friction) * timeScale;
+                    
+                }
+                
+                if (this.xv < 0.1*timeScale && this.xv > -0.1*timeScale) this.xv = 0;
+                
+                if (this.xv < -this.maxXV) this.xv = -this.maxXV;
+                if (this.xv > this.maxXV) this.xv = this.maxXV;
+                
+                if (this.anim != "duck") if (this.xv != 0) this.anim = "run"; else this.anim = "idle";
+                if (this.xv > 0) this.flipH = false;
+                if (this.xv < 0) this.flipH = true;
+                
+                
+                
+                
+                
+            }
+            
+            this.moveY = function () {
+                
+                this.py = this.y;
+                this.y += this.yv * timeScale;
+                this.hitbox.y = this.y;
+                
+                if (this.collisions.B) {
+                    this.yv = 0;
+                    this.y = this.collidedObjects.B.y - this.hitbox.height;
+                } else {
+                    this.yv += gravity;
+                }
+                
+                if (this.collisions.T && this.yv < 0) {
+                    this.yv = 0;
+                    this.y = this.collidedObjects.T.y + this.collidedObjects.T.height;
+                }
+                
+                if (keys.w) {
+                    if (this.collisions.B && !this.collisions.T) {
+                        this.yv = -this.jumpPower;
+                        this.y -= 1;
+                    } // jump
+                } // w pressed
+                
+                if (keys.s) {
+                    this.anim = "duck";
+                } else {
+                    
+                    if (this.anim == "duck") {
+                        this.anim = "idle";
+                    }
+                    
+                }
+                
+                if (this.y > 500) {
+                    this.y = 0;
+                    this.yv = -3;
+                }
+                
+                
+                
+                
+            }
+            
+            this.update = function () {
+                
+                this.moveX();
+                this.moveY();
+                
+                this.render();
+                
+                ctx.save();
+                ctx.fillStyle = "orange"; ctx.globalAlpha = 0.5;
+                ctx.fillRect(this.hitbox.x, this.hitbox.y, this.hitbox.width, this.hitbox.height);
+                ctx.restore();
+                this.collidedObjects.all = [];
+                collide.list.complex(this, simulatedObjects, true);
+            }
+            
+            
+        }
+        
+        function object (arg) {
+            
+            function obj(args) {
+                
+            args = (args === undefined) ? {} : args;
+            
+            function testAttr (testedAttr, defaultAttr) {
+                let attr = args[testedAttr];
+                if (attr === undefined) attr = defaultAttr;
+                return attr;
+            }
+            
+            this.x = testAttr("x", 0);
+            this.y = testAttr("y", 0);
+            
+            this.angle = testAttr("angle", 0);
+            this.collide = testAttr("collide", true);
+            
+            this.width = testAttr("width", 100);
+            this.height = testAttr("height", 12);
+            
+            this.hitbox = {
+                x: this.x,
+                y: this.y,
+                width: this.width,
+                height: this.height
+            };
+            
+            this.drawStyle = testAttr("drawStyle", "fillStyle");
+            this.drawType = testAttr("drawType", "fillRect");
+            
+            this.color = testAttr("color", "darkslategray");
+            
+            
+            this.render = function () {
+                
+                ctx.save();
+                
+                ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                if (this.angle != 0) ctx.rotate(this.angle * 180/Math.PI);
+                
+                ctx[this.drawStyle] = this.color;
+                
+                ctx[this.drawType](-this.width / 2, -this.height / 2, this.width, this. height);
+                
+                ctx.restore();
+                
+            }
+            
+            this.update = function () {
+                
+                this.render();
+                
+            }
+            
+            }
+            
+            let n = new obj(arg);
+            
+            objects.push(n);
+            
+        }
+        
+        addEventListener("keydown", keyDown);
+        function keyDown (event) {
+            let key = event.key.toLowerCase();
+            if (!keys[key]) keysPressed[key] = true;
+            keys[key] = true;
+            
+            if (blockOtherInput) event.preventDefault();
+        }
+        
+        addEventListener("keyup", keyUp);
+        function keyUp (event) {
+            let key = event.key.toLowerCase();
+            keys[key] = false;
+            
+            if (blockOtherInput) event.preventDefault();
+        }
+        
+        addEventListener("mousedown", mouseDown);
+        function mouseDown (event) {
+            let button = event.button;
+            switch (button) {
+                case 0:
+                    mouseButtons.LMB = true;
+                    break;
+                case 1:
+                    mouseButtons.RMB = true;
+                    break;
+            }
+            if (blockOtherInput) event.preventDefault();
+        }
+        
+        addEventListener("mouseup", mouseUp);
+        function mouseUp (event) {
+            let button = event.button;
+            switch (button) {
+                case 0:
+                    mouseButtons.LMB = false;
+                    break;
+                case 1:
+                    break;
+            }
+            if (blockOtherInput) event.preventDefault();
+        }
+        
+        addEventListener("mousemove", mouseMove);
+        function mouseMove (event) {
+            let canvasRect = canvas.getBoundingClientRect();
+            
+            mouse.absX = event.clientX - canvasRect.left;
+            mouse.absY = event.clientY - canvasRect.top;
+            mouse.x = mouse.absX - camera.x;
+            mouse.y = mouse.absY - camera.y;
+            
+            if (blockOtherInput) event.preventDefault();
+        }
+        
+        
+        let collide = {
+            
+            simple: function (object1, object2, returnCollidedObject, margin = 0) {
+                
+                if (returnCollidedObject === undefined) returnCollidedObject = false;
+                if (
+                    
+                    object1.hitbox.x <= object2.hitbox.x + object2.hitbox.width + margin && // object1's left side goes into object2's right side
+                    object1.hitbox.x + object1.hitbox.width >= object2.hitbox.x - margin && // object1's right side goes into object2's left side
+                    
+                    object1.hitbox.y + object1.hitbox.height + object1.yv >= object2.hitbox.y - margin && // object1's bottom goes into object2's top
+                    object1.hitbox.y <= object2.hitbox.y + object2.hitbox.height + object1.yv + margin // object1's top goes into object2's bottom
+                    
+                    ) { log("simple check went through");
+                        if (returnCollidedObject) object1.collidedObjects.all.push(object2);
+                        return true;
+                    }
+                
+                
+                return false;
+                
+            },
+            
+            complex: function (object1, object2, returnCollidedObject, margin = 0) {
+                if (returnCollidedObject === undefined) returnCollidedObject = false;
+                if ( collide.simple(object1, object2, margin) ) {
+                    
+                    let allowHorizontals = (
+                        object1.hitbox.y + object1.hitbox.height > object2.hitbox.y + 3 &&
+                        object1.hitbox.y < object2.hitbox.y + object2.hitbox.height - 3
+                        ) ? true : false;
+                        
+                    let allowVerticals = (
+                        object1.hitbox.x + object1.hitbox.width > object2.hitbox.x &&
+                        object1.hitbox.x < object2.hitbox.x + object2.hitbox.width
+                        ) ? true : false;
+
+
+
+                    if ( 
+                        allowHorizontals &&
+                        object1.hitbox.x <= object2.hitbox.x + object2.hitbox.width &&
+                        object1.hitbox.x > object2.hitbox.x + object2.hitbox.width/2 
+                    ) {
+                        object1.collisions.L = true; log("left side went through");
+                        if (returnCollidedObject) object1.collidedObjects.L = object2;
+                    } 
+                    else
+                    {
+                        if (
+                            allowHorizontals &&
+                            object1.hitbox.x + object1.hitbox.width >= object2.hitbox.x &&
+                            object1.hitbox.x + object1.hitbox.width < object2.hitbox.x + object2.hitbox.width/2
+                        ) {
+                            object1.collisions.R = true; log("right side went through");
+                            if (returnCollidedObject) object1.collidedObjects.R = object2;
+                        } 
+                        else
+                        {
+                            if (
+                                allowVerticals &&
+                                object1.hitbox.y <= object2.hitbox.y + object2.hitbox.height &&
+                                object1.hitbox.y > object2.hitbox.y + object2.hitbox.height/2
+                                ) {
+                                    object1.collisions.T = true; log("top side went through");
+                                    if (returnCollidedObject) object1.collidedObjects.T = object2;
+                                }
+                                else
+                                {
+                                    if (
+                                        allowVerticals &&
+                                        object1.hitbox.y + object1.hitbox.height + object1.yv  >= object2.hitbox.y &&
+                                        object1.hitbox.y + object1.hitbox.height < object2.hitbox.y + object2.hitbox.height + object1.yv
+                                        ) {
+                                            object1.collisions.B = true; log("bottom went through");
+                                            if (returnCollidedObject) object1.collidedObjects.B = object2;
+                                        }
+                                }
+                        }
+                    }
+                    
+                    
+                    
+                }
+                
+                
+            },
+            
+            list: {
+                
+                simple: function (object, list, returnCollidedObject, margin = 0) {
+                    let l = list.length;
+                    if (returnCollidedObject === undefined) returnCollidedObject = false;
+                    for (let i = 0; i < l; i++) {
+                        if (list[i].collide) {
+                            if (collide.simple(object, list[i], returnCollidedObject, margin)) return true;
+                        }
+                    }
+                },
+                
+                complex: function (object, list, returnCollidedObject, margin = 0) {
+                    let l = list.length;
+                    if (returnCollidedObject === undefined) returnCollidedObject = false;
+                    object.collisions.L = false;
+                    object.collisions.R = false;
+                    object.collisions.T = false;
+                    object.collisions.B = false;
+                    if (returnCollidedObject) {
+                        object.collidedObjects.L = undefined;
+                        object.collidedObjects.R = undefined;
+                        object.collidedObjects.T = undefined;
+                        object.collidedObjects.B = undefined;
+                    }
+                    
+                    for (let i = 0; i < l; i++) {
+                        if (list[i].collide) {    
+                            
+                            collide.complex(object, list[i], returnCollidedObject, margin);
+                            
+                            if (object.collisions.R && object.collisions.L && object.collisions.T && object.collisions.B) break;
+                        }
+                    }
+                    
+                     
+                    
+                }
+                
+            }
+        }
+        
+        
+        
+        
+        
+         // make level 1
+        object({x: -50, y: 150, width: 200});
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        let find = new Find();
+        let player = new Player();
+        
+        function updateList (list) {
+            
+            for (let i = list.length; i > 0; i--) {
+                list[i - 1].update();
+            }
+        }
+        
+        function sortObjects (regionPos) {
+            
+            regionPos = regionPos[0] + "," + regionPos[1];
+            if (regions[regionPos] === undefined) regions[regionPos] = [];
+            let l = objects.length;
+            
+            for (let i = 0; i < l; i++) {
+                
+                let region = find.region(objects[i].x, objects[i].y);
+                
+                if (regions[region] === undefined) {
+                    regions[region] = [];
+                }
+                
+                regions[region].push(objects[i]);
+                
+            }
+                
+                objects = [];
+            
+        }
+        
+        function updateObjects () {
+            
+            let startRegionX = player.x + player.width / 2 - canvas.width / 2;
+            let startRegionY = player.y + player.height / 2 - canvas.height / 2;
+            
+            let startRegion = find.region(startRegionX, startRegionY);
+            
+            simulatedObjects = [];
+            
+            let x = startRegion[0];
+            let y = startRegion[1];
+            
+            let endX = startRegion[0] + screenRegionSize[0];
+            let endY = startRegion[1] + screenRegionSize[1];
+            
+            for (x; x < endX; x++) {
+                for (y; y < endY; y++) {
+                    
+                    sortObjects([x, y])
+                    
+                    let region = regions[x + "," + y];
+                 
+                    let l = region.length;
+                    for (let i = 0; i < l; i++) {
+                        simulatedObjects.push(region[i]);
+                    }
+                    
+                }
+                y = startRegion[0];
+            }
+            
+            updateList(simulatedObjects);
+            
+        }
+        function updateObjectSettings () {
+            
+            let numberMatcher = /^[0-9]+$/;
+            let widthIsInt = objectCreatorWidth.value.match(numberMatcher);
+            if (widthIsInt) objectCreatorObject.width = objectCreatorWidth.value;
+            
+            let heightIsInt = objectCreatorHeight.value.match(numberMatcher);
+            if (heightIsInt) objectCreatorObject.height = objectCreatorHeight.value;
+            
+            objectCreatorObject.color = objectCreatorColor.value;
+                
+
+        }
+        function objectCreator () {
+            
+            if (keysPressed.b && blockOtherInput) {
+                if (!objectCreatorObject.use) {
+                    objectCreatorSettings.style.display = "initial";
+                    objectCreatorObject.use = true;
+                    objectCreatorObject.width = 10;
+                    objectCreatorObject.height = 10;
+                    objectCreatorObject.selected = "width";
+                    objectCreatorObject.color = "black"
+                } else {
+                    objectCreatorSettings.style.display = "none";
+                    objectCreatorObject.use = false;
+                }
+            }
+            
+            if (objectCreatorObject.use) {
+                ctx.save(); ctx.fillStyle = objectCreatorObject.color;
+                ctx.fillRect(mouse.x, mouse.y, objectCreatorObject.width, objectCreatorObject.height);
+                ctx.restore();
+                if (keysPressed.arrowright && objectCreatorObject.selected == "height") objectCreatorObject.selected = "width";
+                if (keysPressed.arrowleft && objectCreatorObject.selected == "width") objectCreatorObject.selected = "height";
+                
+                if (keysPressed.arrowup) objectCreatorObject[objectCreatorObject.selected] += 10;
+                if (keysPressed.arrowdown) objectCreatorObject[objectCreatorObject.selected] -= 10;
+                
+                if (mouseButtons.LMB && blockOtherInput) {
+                    objectCreatorObject.use = false;
+                    objectCreatorSettings.style.display = "none";
+                    object({x: mouse.x, y: mouse.y, width: objectCreatorObject.width, height: objectCreatorObject.height, color: objectCreatorObject.color});
+                }
+                
+            }
+            
+        }
+        
+        function game () {
+            
+            logger.innerHTML = "";
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(camera.x, camera.y);
+            
+            
+            updateObjects();
+            //updateList(enemies);
+            //updateList(projectiles);
+           
+            player.update();
+            
+            camera.update(player.x + player.width / 2, player.y + player.height / 2);
+            ctx.fillText(Math.round(mouse.x) + ", " + Math.round(mouse.y), mouse.x, mouse.y);
+            
+            objectCreator();
+            
+            ctx.restore();
+            
+            let l = Object.keys(keysPressed).length;
+            for (let i = 0; i < l; i++) {
+                let key = Object.keys(keysPressed);
+                keysPressed[key[i]] = false;
+            }
+            
+            
+            
+        }
+        
+        function animate () {
+            
+            
+            player.animate();
+            
+            if (timeScale <= 0) timeScale = 0.1;
+            animLoop = setTimeout(animate, 1000/fps/timeScale);
+        }
+        
+        window.onload = function onload () {
+            let gameLoop = setInterval(game, 1000/fps);
+            let animLoop = setTimeout(animate, 1000/fps/timeScale);
+        }
+        
+        
+        
+        
+        
+        </script>
+
+    </body>
+</html> -->
+
+</body>
+
+</html>

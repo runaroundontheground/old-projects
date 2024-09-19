@@ -1,0 +1,720 @@
+<HTML>
+
+<head>
+    <title> 2d parkour platformer </title>
+</head>
+
+<body onclick="allowType = true;">
+
+    <a href="../index.html">back to home</a>
+
+    <h1>plans for the game:</h1>
+    <label for="gameplay">gameplay: (it's a list)</label>
+    <select id="gameplay">
+        <option>crawl</option>
+        <option>maybe vault</option>
+        <option>swing and jump off bars</option>
+        <option>better slowmo</option>
+        <option>melee combat (weapons?)</option>
+        <option>jump and roll, fall damage</option>
+        <option>melee system can parry projectiles when time is slowed</option>
+    </select>
+    <p id="logger1">1</p>
+    <p id="logger2">2</p>
+    <p id="logger3">3</p>
+    <p id="mpos">mouse position</p>
+
+    <canvas id="canv" width=100 height=100
+        style="background-image: linear-gradient(blue, lightblue); position: absolute;"
+        onclick="allowType = false"></canvas>
+    <script>
+        // get the canvas
+        const canv = document.getElementById("canv");
+        const logger = [document.getElementById("logger1"), document.getElementById("logger2"), document.getElementById("logger3")];
+        const mpos = document.getElementById("mpos");
+        // get the context for the canvas
+
+        // set up canvas, center it
+        canv.width = window.innerWidth / 1.3;
+        canv.height = window.innerHeight / 1.4;
+        canv.style.left = ((window.innerWidth) - window.innerWidth / 1.3) / 2;
+        canv.style.top = ((window.innerHeight) - window.innerHeight / 1.4) / 2;
+        const ctx = canv.getContext("2d");
+        // set up misc variables
+        let fps = 60;
+        const images = {
+            stick: { // image, current anim, max anim, anim delay, anim max delay
+                run: [new Image(), 0, 8, 0, 3],
+                walk: [new Image(), 0, 7, 0, 4],
+                idle: [new Image(), 0, 2, 0, fps * 2],
+                slide: [new Image(), 0, 1, 0, 0],
+                crawl: [new Image(), 0, 1, 0, 0]
+            },
+            blank: new Image()
+        }; // load images beforehand so i don't have like 80 loaded in different objects at once
+        images.stick.run[0].src = "stickmanrun.png";
+        images.stick.walk[0].src = "stickmanwalk.png";
+        images.stick.idle[0].src = "stickmanidle.png";
+        images.stick.slide[0].src = "stickmanslide.png";
+        images.stick.crawl[0].src = "";
+        images.blank.src = "blank.png";
+
+        let input = { k: {}, m: {}, kP: {}, mP: {} }; // k (keys) m (mouse), kP (keys pressed) mB (mouse pressed)
+        ctx.font = Math.round((canv.height + canv.width) / 72) + "px Arial";
+        let mx = 0;
+        let my = 0;
+        let grav = 0.1;
+        let timeScale = 1.0;
+        let frameAdv = false;
+        let waiting = false;
+        let go = false;
+        let objPreview = false;
+        let previewObj = new mk({ rT: "r", w: 100, h: 6 });
+        previewObj.selected = 0;
+        // camera
+        let c = { x: 0, y: 0, shake: { str: 5, time: 0 } };
+        let allowType = true; // only allow typing off of game
+
+        let objs = [];
+        let bg = [];
+        let enemies = [];
+        let proj = [];
+
+        let plr = new mk({ img: images.stick, rT: "i", anim: true, centered: true, hw: 25 });
+
+        plr.type = "plr";
+        plr.acc = 0.5;
+        plr.friction = 0.1;
+        plr.mXV = 3;
+        plr.slo = { slowing: false, speeding: false };
+        plr.wc = { l: false, r: false, u: false };
+        plr.delay.jump = 0;
+        plr.w = 5;
+        plr.h = 5;
+        plr.complexColl = true;
+        // the sun
+        obj({ x: 100, y: 100, rT: "c", radius: 30, color: "yellow", fixed: true, coll: false });
+
+
+        obj({ x: -150, y: 100, w: 500 });
+        obj({ x: 58, y: -180, w: 10, h: 226 });
+        obj({ x: -81, y: -125, w: 10, h: 196 });
+        obj({ x: 63, y: -180, w: 150, h: 6 });
+
+        addEventListener("keydown", kDown);
+        addEventListener("keyup", kUp);
+
+        addEventListener("mousedown", mDown);
+        addEventListener("mouseup", mUp);
+        addEventListener("mousemove", mMove);
+        addEventListener("scroll", scroll);
+
+        function log(t1, t2, t3) {
+            logger[0].innerText = (t1 === undefined || t1 === NaN) ? logger[0].innerText : t1;
+            logger[1].innerText = (t2 === undefined || t2 === NaN) ? logger[1].innerText : t2;
+            logger[2].innerText = (t3 === undefined || t3 === NaN) ? logger[2].innerText : t3;
+        };
+
+
+
+        function mDown(e) {
+
+            let ev = e.button;
+            if (!input.m[ev]) input.mP[ev] = true;
+            input.m[ev] = true;
+
+            if (!allowType) e.preventDefault();
+
+        }
+
+        function mUp(e) {
+
+            let ev = e.button;
+            input.m[ev] = false;
+
+            if (!allowType) e.preventDefault();
+
+        }
+
+        function mMove(e) {
+
+            let canvRect = canv.getBoundingClientRect();
+            mx = Math.round(e.clientX - canvRect.left);
+            my = Math.round(e.clientY - canvRect.top);
+
+            if (!allowType) e.preventDefault();
+
+        }
+
+        function scroll(e) {
+
+
+            if (!allowType) e.preventDefault();
+
+        }
+
+        function kDown(e) {
+
+            let ev = (e.key).toLowerCase();
+            if (!input.k[ev]) input.kP[ev] = true;
+            input.k[ev] = true;
+
+            if (input.k.i) {
+                frameAdv = (frameAdv) ? false : true;
+                clearInterval(Frame);
+                Frame = setInterval(game, 1000 / fps / timeScale);
+            }
+            if (!allowType) e.preventDefault();
+
+        }
+
+        function kUp(e) {
+
+            let ev = (e.key).toLowerCase();
+            input.k[ev] = false;
+
+            if (!allowType) e.preventDefault();
+
+        }
+
+        // define main object creation function, mk. stands for make, i use an object for arguments because it's easier
+        function mk({
+            x, y, angle,
+            coll, hw, hh,
+            opacity, visible, flipH, flipV,
+            img, rT, color, fixed, centered,
+            anim, delay,
+            size, w, h, radius
+        }) {
+            // positional
+            this.x = x || 0;
+            this.y = y || 0;
+            this.px = 0;
+            this.py = 0;
+            this.xv = 0;
+            this.yv = 0;
+            this.scrX = 0;
+            this.scrY = 0;
+            this.angle = angle || 0;
+
+            // typing
+            this.type = "NaN";
+
+            // collision
+            this.coll = (coll === undefined) ? true : false;
+            this.T = false;
+            this.L = false;
+            this.R = false;
+            this.B = false;
+
+            // visible effects
+            this.opacity = opacity || 1.0;
+            this.flipH = false;
+            this.flipV = false;
+
+            // rendering
+            this.color = color || "black";
+            this.centered = (centered === undefined) ? false : true
+            this.rT = rT || "r";
+            let Size = size || 1.0;
+            useAnim = (anim === undefined) ? false : anim;
+
+            // render types
+            if (this.rT != "i") {
+                this.w = w || 5;
+                this.h = h || 5;
+            }
+            if (this.rT == "i") {
+                this.img = img;
+                if (!useAnim) {
+                    this.w = w || this.img.width;
+                    this.h = h || this.img.height;
+                }
+            }
+            if (!useAnim) {
+                this.w *= Size;
+                this.h *= Size;
+            }
+
+            // rendering and other functions
+
+            this.pos = function () { }
+            this.render = function () { }
+
+            if (this.rT == "i") this.render = function () { ctx.drawImage(this.img, this.x + c.x, this.y + c.y) };
+            if (this.rT == "r" && this.rTT == "fill") this.render = function () {
+                //     ctx.fillRect(this.x + c.x,)
+            }
+            this.draw = function () {
+
+                if (this.angle !== 0) {
+
+                    ctx.translate(this.x + c.x + this.w / 2, this.y + c.y + this.h / 2);
+                    ctx.rotate(this.angle * Math.PI / 180);
+                    ctx.translate(this.w / -2, this.h / -2);
+
+                }
+
+                this.render();
+            }
+
+            /*
+                this.radius = radius || this.w;
+                this.render = function(){
+                ctx.beginPath();
+                let posx = (this.fixed) ? this.x : -this.radius/2;
+                let posy = (this.fixed) ? this.y : -this.radius/2;
+                ctx.translate(this.x + this.w/2, this.y + this.h/2);
+                ctx.arc(posx, posy, this.radius, 2 * Math.PI, false);
+                if (!this.fixed) {
+                    
+                    ctx.rotate(this.angle * Math.PI/180);
+                    ctx.translate(this.w/-2, this.h/-2);
+                }
+                ctx.fill();
+                }
+            }*/
+
+            // animation
+            if (useAnim) {
+                this.size = Size;
+                this.anim = "run";
+                this.render = function () {
+                    if (!this.fixed) {
+                        ctx.translate(this.x + c.x + this.w / 2, this.y + c.y + this.h / 2);
+                        ctx.rotate(this.angle * Math.PI / 180);
+                        ctx.translate(this.w / -2, this.h / -2);
+                    }
+                    let a = this.img[this.anim];
+                    let cn = a[1];
+                    let e = a[2];
+
+                    this.w = (a[0].width / e) * this.size;
+                    this.hw = this.w;
+                    this.h = a[0].height * this.size;
+                    this.hh = this.h;
+
+                    // start doing animation things
+                    let cd = a[3];
+                    let ed = a[4];
+                    if (cd < ed) cd += 1;
+                    if (cd == ed) { cd = 0; cn += 1; }
+                    if (cn == e) cn = 0;
+
+                    if (this.flipH) { ctx.scale(-1, 1); ctx.translate(-this.w, 0); };
+                    if (this.flipV) { ctx.scale(1, -1); ctx.translate(0, -this.h) };
+                    // img,                 sx,    sy,sw,sh,     x,   y,   w,  h
+                    ctx.strokeStyle = "orange"; ctx.strokeRect(0, 0, this.hw, this.hh);
+
+                    ctx.drawImage(a[0], this.w * cn, 0, this.w, this.h, 0, 0, this.w, this.h);
+
+                    this.img[this.anim][1] = cn;
+                    this.img[this.anim][3] = cd;
+                }
+            } // animation
+
+            // delays
+            this.delay = (delay === undefined) ? {} : delay;
+            this.runDel = function () {
+                let keys = Object.keys(this.delay); let l = keys.length;
+                for (let i = 0; i < l; i++) {
+                    let key = keys[i];
+                    if (this.delay[key] > 0) this.delay[key] -= 1;
+                    if (this.delay[key] < 0) this.delay[key] += 1;
+                }
+            }
+
+            // hitbox width/height
+            this.hw = hw || this.w;
+            this.hh = hh || this.h;
+
+        } // make a thing
+        function base() { };
+        function testingObj(attr = { x: 0, y: 0 }) {
+
+            let n = new base();
+            n = attr;
+            console.log(n)
+        }
+        testingObj({
+            render: function () { console.log("testing") }
+        })
+        // make an object
+        function obj({ x, y, angle, coll, hw, hh, opacity, visible, flipH, flipV, img, rT, color, fixed, centered, anim, delay, size, w, h, radius }, list = objs) {
+
+            let n = new mk({ x, y, angle, coll, hw, hh, opacity, visible, flipH, flipV, img, rT, color, fixed, centered, anim, delay, size, w, h, radius })
+            n.kill = function () { list.remove(n); };
+            n.type = "obj";
+            list.push(n);
+        }
+
+
+        function doGame(thing) {
+            let tempList = thing;
+            let i = 0;
+            let l = tempList.length;
+            for (i; i < l; i++) tempList[i].game();
+        }
+
+
+        function collide(o1, obj2) {
+
+            let i = 0; let l = obj2.length;
+            let collided = { L: NaN, R: NaN, T: NaN, B: NaN };
+            o1.L = false; o1.R = false;
+            o1.T = false; o1.B = false;
+
+            for (i; i < l; i++) {
+
+                let o2 = obj2[i];
+                if (!o2.coll) continue;
+
+                if (o1.complexColl === true) {
+
+                    let o1l = o1.x; let o1r = o1.x + o1.hw;
+                    let o1t = o1.y; let o1b = o1.y + o1.h;
+                    if (o1.anim == "slide") o1t -= o1.h * 3;
+                    // hitbox thingys are way too buggy rn
+                    let o2l = o2.x; let o2r = o2.x + o2.hw;
+                    let o2t = o2.y; let o2b = o2.y + o2.hh;
+                    // general collision check
+                    if (o1l <= o2r && o1r >= o2l && o1t <= o2b && o1b >= o2t) {
+                        if (o1.anim == "slide") o1t += o1.h * 3;
+                        // top / bottom coll
+                        if (o1l < o2r + o1.xv && o1r > o2l - o1.xv) {
+                            if (o1.anim == "slide") o1t -= o1.h * 3;
+                            if (!o1.T) if (o1t + o1.yv <= o2b && o1t >= o2t + o2.h / 2) { o1.T = true; collided.T = o2 };
+                            if (!o1.B) if (o1b <= o2t + o1.yv) { o1.B = true; collided.B = o2; };
+                            if (o1.anim == "slide") o1t += o1.h * 3;
+                        }
+
+                        // left / right coll
+                        if (o1t < o2b - o1.yv && o1b > o2t + o1.yv) {
+                            if (!o1.L) if (o1l <= o2r && o1l >= o2l + o2.w / 2) { o1.L = true; collided.L = o2; }
+                            if (!o1.R) if (o1r >= o2l && o1r <= o2l + o2.w / 2) { o1.R = true; collided.R = o2; }
+                        }
+                        // reset things
+                        if (collided.L == collided.R) { o1.L = false; o1.R = false; }
+                        if (collided.T == collided.B) { o1.T = false; o1.B = false; }
+                        if (o1.L && o1.R && o1.T && o1.B) break;
+
+                    }
+                }
+            }
+
+            return collided;
+        }
+
+
+        // player's things during frame
+        plr.frame = function () {
+
+            // get collisions
+            let coll = collide(plr, objs);
+
+            // get jumping power
+            let jumpPower = grav * 25;
+
+            // animation
+            if (plr.xv > 0) plr.flipH = false;
+            if (plr.xv < 0) plr.flipH = true;
+            if (plr.xv == 0 && plr.B && plr.anim != "slide") plr.anim = "idle";
+            if (plr.xv != 0 && plr.anim != "slide") { // no jump/fall anim yet, go make one
+                if (plr.B) plr.anim = "run";// else plr.anim = (plr.yv <= 0) ? "jump" : "fall";
+            }
+
+            // gravity/falling
+            if (plr.B) {
+                plr.yv = 0;
+                plr.y = coll.B.y - plr.h;
+                plr.wc.r = false;
+                plr.wc.l = false;
+                plr.wc.u = false;
+            } else plr.yv += grav;
+
+            // unstuck walls
+            if (plr.R) { plr.xv = 0; plr.x = coll.R.x - plr.w; };
+            if (plr.L) { plr.xv = 0; plr.x = coll.L.x + coll.L.w; };
+
+            // unstuck ceiling
+            if (plr.T && !(coll.R == coll.T)) {
+                if (plr.anim != "slide") plr.y = coll.T.y + coll.T.h + 1;
+                if (plr.yv < 0) plr.yv = 0;
+
+            }
+
+            // make camera go to player
+            c.x -= Math.round((plr.x + plr.w / 2 + c.x - canv.width / 2) / 5);
+            c.y -= Math.round((plr.y + plr.h / 2 + c.y - canv.height / 2) / 5);
+
+            // left/right movement
+            if (plr.anim != "slide") {
+                let tempMXV = plr.mXV;
+                if (plr.anim == "crawl") tempMXV /= 3;
+                if (input.k.d && plr.xv < tempMXV) plr.xv += (plr.B) ? plr.acc : plr.acc / 5;
+                if (input.k.a && plr.xv > -tempMXV) plr.xv -= (plr.B) ? plr.acc : plr.acc / 5;
+            }
+            // friction
+            let friction = plr.xv * plr.friction;
+            if (plr.anim == "slide") friction /= 5;
+            if (((!input.k.a && !input.k.d) || (input.k.a && input.k.d)) && plr.B || plr.anim == "slide") plr.xv -= friction;
+            if (plr.xv < 0.1 && plr.xv > -0.1) plr.xv = 0;
+
+            // do some wallclimbing checks
+            if (plr.wc.u) {
+                plr.xv = 0;
+                // ledge grabbing
+
+                // things
+                function wallhang(num, key, otherKey, side, endpos, flipL, flipR) {
+                    plr.yv = 0;
+                    if (input.k[otherKey]) plr.flipH = flipL; else plr.flipH = flipR;
+
+                    if ((input.kP.w && input.k[key]) || (plr.y < coll[side].y - 5)) {
+                        plr.x = coll[side].x - endpos;
+                        plr.y = coll[side].y - plr.h - 1;
+                        plr.delay.jump = 10 * num;
+                    }
+
+                    if (input.kP.s) {
+                        plr.x += 1 * num;
+                        plr.wc.u = false;
+                    }
+                }
+
+                // wallhang right side
+                if (plr.R && plr.y < coll.R.y) {
+                    wallhang(1, "d", "a", "R", 0, true, false)
+                }
+
+                // wallhang left side
+                if (plr.L && plr.y < coll.L.y) {
+                    wallhang(-1, "a", "d", "L", plr.w, false, true)
+                }
+            }
+
+            // up movement
+            if (input.kP.w) {
+                if (plr.anim != "slide") {
+                    if (plr.B && plr.delay.jump == 0) plr.yv = -jumpPower;
+
+                    if (!plr.B && (plr.L || plr.R)) { // wallclimb or jump off
+
+                        // walljump / cat 180
+                        if ((plr.R && plr.wc.r) || (plr.L && plr.wc.l)) {
+
+                            // walljump off right side
+                            if (plr.R && plr.wc.r && input.k.a) {
+                                plr.xv = -jumpPower;
+                                plr.yv = -jumpPower;
+                                plr.wc.u = false;
+                            }
+
+                            // left side walljump
+                            if (plr.L && plr.wc.l && input.k.d) {
+                                plr.xv = jumpPower;
+                                plr.yv = -jumpPower;
+                                plr.wc.u = false;
+                            }
+                        } // walljump / cat 180
+
+                        // wallclimb right
+                        if (!plr.wc.r && plr.R) {
+                            plr.wc.r = true;
+                            plr.wc.l = false;
+                            plr.wc.u = true;
+                            plr.yv = -jumpPower * 1.7;
+                        }
+
+                        // wallclimb left
+                        if (!plr.wc.l && plr.L) {
+                            plr.wc.l = true;
+                            plr.wc.r = false;
+                            plr.wc.u = true;
+                            plr.yv = -jumpPower * 1.7;
+                        }
+
+
+                    } // wallclimb brace
+                } /*if not slide bracket*/ else { // do if sliding (use for jumping off of things while sliding)
+                    //jump off while sliding
+                }
+            } // up brace
+
+            // things on s press / slide
+            if (input.kP.s || plr.anim == "slide" || plr.anim == "crawl") {
+
+                if (plr.anim == "crawl") { } // do crawl things
+
+                if (plr.anim == "slide") {
+                    if ((plr.xv < 0.1 && plr.xv > -0.1 && !plr.T) || (!input.k.s && plr.xv < 1 && plr.xv > -1 && !plr.T)) {
+                        if (!go) {
+                            plr.y -= plr.h * 3;
+                            go = true;
+                        } else {
+                            plr.anim = "run";
+                        }
+                    }
+
+                } else {
+
+                    if (plr.B && (input.k.a || input.k.d)) {
+                        plr.anim = "slide";
+                        plr.y += plr.h / 1.4;
+                        go = false;
+                    }
+                }
+            }
+
+
+            if (plr.y + c.y > canv.height) { plr.x = 0; plr.y = 0; plr.yv = 0; plr.xv = 0; };
+
+            // testing things
+            if (input.kP.x) { plr.x = mx - c.x; plr.y = my - c.y; };
+
+            // do slow motion for coolness
+            if (input.kP.r && !plr.slo.slowing) plr.slo.slowing = true;
+            if (plr.slo.slowing || plr.slo.speeding) {
+                if (plr.slo.slowing && timeScale > 0.3) timeSpeed(timeScale - 0.05);
+                if (timeScale <= 0.3 && plr.slo.slowing) {
+                    plr.slo.slowing = false;
+                    setTimeout("plr.slo.speeding = true;", 1000);
+                }
+                if (plr.slo.speeding) {
+                    if (timeScale < 1.0) timeSpeed(timeScale + 0.05);
+                    if (timeScale == 1.0) plr.slo.speeding = false;
+                }
+
+            }
+
+            log("xv: " + plr.xv, "top: " + plr.T, "bottom: " + plr.B);
+        }
+
+
+        // main game loop
+        function game() {
+
+            ctx.clearRect(0, 0, canv.width, canv.height);
+
+            plr.game();
+            doGame(bg);
+            doGame(objs);
+            doGame(enemies);
+            doGame(proj);
+
+            ctx.fillText("X: " + (mx - c.x) + ", Y: " + (my - c.y), mx + 10, my - 40);
+            if (input.mP["0"]) {
+                if (!objPreview) mpos.innerText = "X: " + (mx - c.x) + ", Y: " + (my - c.y);
+            }
+
+            if (input.kP.l) objPreview = (objPreview) ? false : true;
+
+            if (objPreview) preview(previewObj);
+
+
+            i = 0; let key = Object.keys(input.mP); l = key.length; // make it so that things that only need to go once when the mouse is clicked go
+            for (i; i < l; i++) input.mP[key[i]] = false;
+            i = 0; key = Object.keys(input.kP); l = key.length;
+            for (i; i < l; i++) input.kP[key[i]] = false;
+
+        }
+        mk.prototype.frame = function () {
+            this.pos();
+        }
+        // main game loop (for clones)
+        mk.prototype.game = function () {
+
+            ctx.save();
+
+            this.px = this.x;
+            this.py = this.y;
+
+            this.x += this.xv;
+            this.y += this.yv;
+
+            this.frame();
+
+            this.runDel();
+
+            ctx.fillStyle = this.color;
+
+            this.draw();
+
+
+            ctx.restore();
+
+        }
+
+        function timeSpeed(tscale) {
+            clearInterval(Frame);
+            timeScale = (tscale === undefined) ? 1.0 : tscale;
+            Frame = setInterval(game, 1000 / fps / timeScale);
+        }
+
+        // start the game once the page loads
+        window.onload = function onload() {
+
+            Frame = setInterval(game, 1000 / fps / timeScale);
+
+        }
+
+        // make a preview for placing objects
+        function preview(o) {
+
+            ctx.save();
+
+            ctx.globalAlpha = 0.5;
+            o.x = plr.x + mx - canv.width / 2 + plr.w / 2;
+            o.y = plr.y + my - canv.height / 2 + plr.h / 2;
+
+            if (input.kP.arrowleft) o.selected -= (o.selected == 0) ? 0 : 1;
+            if (input.kP.arrowright) o.selected += (o.selected == 2) ? 0 : 1;
+
+            // increase properties
+            if (input.kP.arrowup) {
+                switch (o.selected) {
+                    case 0:
+                        o.w += 10;
+                        break;
+                    case 1:
+                        o.h += 10;
+                        break;
+                    case 2:
+                        o.angle += 10;
+                        break;
+                }
+            }
+
+            // reduce properties
+            if (input.kP.arrowdown) {
+                switch (o.selected) {
+                    case 0:
+                        o.w -= 10;
+                        break;
+                    case 1:
+                        o.h -= 10;
+                        break;
+                    case 2:
+                        o.angle -= 10;
+                        break;
+                }
+
+            }
+
+            o.render();
+            let textVal = (o.selected === 0) ? "width: " + o.w : (o.selected === 1) ? "height: " + o.h : "angle: " + o.angle;
+            if (input.mP["0"]) {
+                let n = new mk({ x: o.x, y: o.y, w: o.w, h: o.h, angle: o.angle });
+                mpos.innerText = "x: " + Math.round(o.x) + "\ny: " + Math.round(o.y) +
+                    "\nwidth: " + o.w + "\nheight: " + o.h + "\nangle: " + o.angle;
+                objs.push(n);
+            }
+            ctx.restore();
+            ctx.fillText(textVal, mx, my + o.h + 20);
+
+        }
+    </script>
+
+</body>
+
+</html>
