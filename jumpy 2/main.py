@@ -1,5 +1,5 @@
-import pygame, math, sys, random, os;
-import asyncio
+import pygame, math, sys, random, os, js;
+from pygame.locals import *
 pygame.init();
 
 
@@ -22,6 +22,7 @@ screenChunks = [1, 1];
 screenChunks[0] = math.ceil(screenWidth / totalChunkSize) + 1;
 screenChunks[1] = math.ceil(screenHeight / totalChunkSize) + 1;
 
+canvas = js.document.getElementById("canvas")
 screen = pygame.display.set_mode((screenWidth, screenHeight));
 screenRect = pygame.Rect(-tileSize, -tileSize, screenWidth + tileSize, screenHeight + tileSize);
 
@@ -2288,113 +2289,109 @@ def advanceFrame():
         pygame.display.flip();
         timeScale = 0;
 
-async def main():
+while running: # game loop
 
-    while running: # game loop
+    tempKeys = pygame.key.get_pressed();
 
-        tempKeys = pygame.key.get_pressed();
+    for num in range(len(tempKeys)):
 
-        for num in range(len(tempKeys)):
+        if not keys[num] and tempKeys[num]:
 
-            if not keys[num] and tempKeys[num]:
+            keysPressed[num] = True;
+        
+    keys = tempKeys;
 
-                keysPressed[num] = True;
-            
-        keys = tempKeys;
+    if timeScale > 0:
+        screen.fill(skyblue);
+        
+        
+        
+        mousePos = pygame.mouse.get_pos();
+        mouse.absX, mouse.absY = mousePos[0], mousePos[1];
+        
+        mouse.x = mouse.absX + camera.x;
+        mouse.y = mouse.absY + camera.y;
+        mouse.pos = (mouse.x, mouse.y);
+        
+        cameraChunk = getChunkPos(camera.x, camera.y);
+        
+        renderTiles(cameraChunk);
 
-        if timeScale > 0:
-            screen.fill(skyblue);
-            
-            
-            
+        playerFrame();
+        if len(groundItems) > 400:
+            groundItems.remove(0);
+        i = len(groundItems) - 1;
+        while i > -1:
+            item = groundItems[i];
+            groundItemsFrame(item);
+            i -= 1;
+        
+        
+        updateCamera();
+        
+        test = pygame.Rect(mouse.x-camera.x, mouse.y-camera.y, 5, 5);
+        pygame.draw.rect(screen, green, test);
+        
+        mouse.pressed = False;
+        runAnims = False;
+        thing = player.image[player.anim]
+        if thing["armPos"][thing["currentFrame"]] == (0, 0):
+            pygame.draw.rect(screen, red, (300, 300, 30, 30));
+    else:
+        
+        if keys[pygame.K_p]: advanceFrame();
+        if keys[pygame.K_l]: timeScale = 1.0; setAnimTimer();
+        if keysPressed[pygame.K_m]:
             mousePos = pygame.mouse.get_pos();
             mouse.absX, mouse.absY = mousePos[0], mousePos[1];
-            
-            mouse.x = mouse.absX + camera.x;
-            mouse.y = mouse.absY + camera.y;
-            mouse.pos = (mouse.x, mouse.y);
-            
-            cameraChunk = getChunkPos(camera.x, camera.y);
-            
-            renderTiles(cameraChunk);
 
-            playerFrame();
-            if len(groundItems) > 400:
-                groundItems.remove(0);
-            i = len(groundItems) - 1;
-            while i > -1:
-                item = groundItems[i];
-                groundItemsFrame(item);
-                i -= 1;
+            img = player.image[player.anim]["image"];
+            x = mouse.absX;
+            y = mouse.absY + 300;
+            print(str(x) + ", " + str(y - 300));
             
+            print(player.image[player.anim]["currentFrame"]);
             
-            updateCamera();
+            pos = [int(player.x - camera.x), int(player.y - camera.y)];
+            pos[0] += x;
+            pos[1] += y - 600;
             
-            test = pygame.Rect(mouse.x-camera.x, mouse.y-camera.y, 5, 5);
-            pygame.draw.rect(screen, green, test);
-            
-            mouse.pressed = False;
-            runAnims = False;
-            thing = player.image[player.anim]
-            if thing["armPos"][thing["currentFrame"]] == (0, 0):
-                pygame.draw.rect(screen, red, (300, 300, 30, 30));
-        else:
-            
-            if keys[pygame.K_p]: advanceFrame();
-            if keys[pygame.K_l]: timeScale = 1.0; setAnimTimer();
-            if keysPressed[pygame.K_m]:
-                mousePos = pygame.mouse.get_pos();
-                mouse.absX, mouse.absY = mousePos[0], mousePos[1];
-
-                img = player.image[player.anim]["image"];
-                x = mouse.absX;
-                y = mouse.absY + 300;
-                print(str(x) + ", " + str(y - 300));
-                
-                print(player.image[player.anim]["currentFrame"]);
-                
-                pos = [int(player.x - camera.x), int(player.y - camera.y)];
-                pos[0] += x;
-                pos[1] += y - 600;
-                
-                pygame.draw.rect(screen, yellow, (pos[0], pos[1], 5, 5))
-                pygame.display.flip()
-        for event in pygame.event.get():
-        
-            if event.type == pygame.QUIT:
-            
-                pygame.quit();
-                sys.exit();
-                
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse.down = True;
-                mouse.button = event.button;
-                mouse.pressed = True;
-            if event.type == pygame.MOUSEBUTTONUP:
-                mouse.down = False;
-            if event.type == pygame.MOUSEWHEEL:
-                player.hotbar.slot -= event.y;
-                if player.hotbar.slot <= -1:
-                    player.hotbar.slot = 0;
-                if player.hotbar.slot >= 5:
-                    player.hotbar.slot = 4;
-
-            if event.type == animEventInt and timeScale > 0:
-                
-                runAnims = True;
-                pygame.time.set_timer(animEventInt, abs(int(1000 / FPS / timeScale) - 5));
-                
-        
-        for num in range(len(keysPressed)):
-            keysPressed[num] = False;
-        
-                    
-        
-        
-        pygame.display.flip();
-        #clock.tick(FPS);
-        await asyncio.sleep(0)
+            pygame.draw.rect(screen, yellow, (pos[0], pos[1], 5, 5))
+            pygame.display.flip()
+    for event in pygame.event.get():
     
-if __name__ == "__main__":
-    asyncio.run(main())
+        if event.type == pygame.QUIT:
+        
+            pygame.quit();
+            sys.exit();
+            
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mouse.down = True;
+            mouse.button = event.button;
+            mouse.pressed = True;
+        if event.type == pygame.MOUSEBUTTONUP:
+            mouse.down = False;
+        if event.type == pygame.MOUSEWHEEL:
+            player.hotbar.slot -= event.y;
+            if player.hotbar.slot <= -1:
+                player.hotbar.slot = 0;
+            if player.hotbar.slot >= 5:
+                player.hotbar.slot = 4;
+
+        if event.type == animEventInt and timeScale > 0:
+            
+            runAnims = True;
+            pygame.time.set_timer(animEventInt, abs(int(1000 / FPS / timeScale) - 5));
+            
+    
+    for num in range(len(keysPressed)):
+        keysPressed[num] = False;
+    
+                 
+    
+    
+    pygame.display.flip();
+    clock.tick(FPS);
+    
+
 input() # stop game when it ends sometimes
