@@ -1,7 +1,9 @@
-import pygame, math, sys, random, os, js;
+import math, sys, random, os, js;
+import pygame
+
 from pygame.locals import *
 pygame.init();
-
+js.console.log("test");
 
 keys = pygame.key.get_pressed();
 keysPressed = [];
@@ -23,19 +25,24 @@ screenChunks[0] = math.ceil(screenWidth / totalChunkSize) + 1;
 screenChunks[1] = math.ceil(screenHeight / totalChunkSize) + 1;
 
 canvas = js.document.getElementById("canvas")
-screen = pygame.display.set_mode((screenWidth, screenHeight));
+canvas.width = screenWidth
+canvas.height = screenHeight
+screen = pygame.display.set_mode((canvas.width, canvas.height));
 screenRect = pygame.Rect(-tileSize, -tileSize, screenWidth + tileSize, screenHeight + tileSize);
 
 clock = pygame.time.Clock();
 
 hotbarRect = pygame.Rect(0, 0, 50, 50);
 
-if os.path.exists("C:/jumpy 2 stuff"):
-    path = "C:/jumpy 2 stuff/";
-    useImage = True;
-else:
-    useImage = True;
-    path = os.path.dirname(os.path.realpath(__file__)) + "/";
+path = "./"
+useImage = False
+
+# if os.path.exists("C:/jumpy 2 stuff"):
+#     path = "C:/jumpy 2 stuff/";
+#     useImage = True;
+# else:
+#     useImage = True;
+#     path = os.path.dirname(os.path.realpath(__file__)) + "/";
 
 
 FPS = 60;
@@ -2285,7 +2292,7 @@ def advanceFrame():
         thing = player.image[player.anim]
         if thing["armPos"][thing["currentFrame"]] == (0, 0):
             pygame.draw.rect(screen, red, (300, 300, 30, 30));
-
+        js.context.drawImage(screen, 0, 0, canvas.width, canvas.height)
         pygame.display.flip();
         timeScale = 0;
 
@@ -2357,6 +2364,7 @@ while running: # game loop
             pos[1] += y - 600;
             
             pygame.draw.rect(screen, yellow, (pos[0], pos[1], 5, 5))
+            js.context.drawImage(screen, 0, 0, canvas.width, canvas.height)
             pygame.display.flip()
     for event in pygame.event.get():
     
@@ -2388,7 +2396,7 @@ while running: # game loop
         keysPressed[num] = False;
     
                  
-    
+    js.context.drawImage(screen, 0, 0, canvas.width, canvas.height)
     
     pygame.display.flip();
     clock.tick(FPS);

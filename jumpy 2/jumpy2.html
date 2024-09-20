@@ -5,26 +5,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>jumpy 2</title>
-    <script defer src="https://cdn.jsdelivr.net/pyodide/v0.21.3/full/pyodide.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
 </head>
 
 <body>
     <a href="../index.html">back to home</a>
     <canvas id="canvas" width="800" height="600"></canvas>
     <script>
-        async function runPython() {
+        async function main() {
             let pyodide = await loadPyodide();
-            await pyodide.loadPackage("pygame");
+            await pyodide.loadPackage("pygame-ce");
 
-            // Fetch the Python code from the server
+            const canvas = document.getElementById("canvas");
+            const context = canvas.getContext("2d");    
+            
+            // pyodide.globals["canvas"] = canvas;
+            // pyodide.globals["context"] = context;
+
             let response = await fetch('main.py');
             let pythonCode = await response.text();
-
-            // Run the Python code
             await pyodide.runPythonAsync(pythonCode);
         }
 
-        runPython();
+        main();
     </script>
 </body>
 
