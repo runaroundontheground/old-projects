@@ -22,7 +22,8 @@
             // pyodide.globals["canvas"] = canvas;
             // pyodide.globals["context"] = context;
 
-            let response = await fetch('main.py');
+            // let response = await fetch('main.py');
+            let response = await fetch("test.py");
             let pythonCode = await response.text();
             await pyodide.runPythonAsync(pythonCode);
         }

@@ -1,9 +1,7 @@
-import math, sys, random, os, js;
-import pygame
+import math, sys, random, pygame, js;
 
 from pygame.locals import *
-pygame.init();
-js.console.log("test");
+pygame.display.init();
 
 keys = pygame.key.get_pressed();
 keysPressed = [];
